@@ -1,3 +1,5 @@
+const TOKEN = "MTEyNTcxNjUxNTI0NTgwNTY0OA.GoxjYr.JrZNpyfpvSRiLyxxVvpBi2CEvzcVrqIIzszer8";
+
 const { ActivityType, interaction, Client, GatewayIntentBits, partials, Partials, Embed, EmbedBuilder, PermissionsBitField, MessageFlags } = require("discord.js");
 const { SlashCommandBuilder } = require("@discordjs/builders");
 const PREFIX = "!";
