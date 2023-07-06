@@ -1,5 +1,4 @@
-const TOKEN = "MTEyNTcxNjUxNTI0NTgwNTY0OA.GoxjYr.JrZNpyfpvSRiLyxxVvpBi2CEvzcVrqIIzszer8";
-
+const { TOKEN } = require("./config.js")
 const { ActivityType, interaction, Client, GatewayIntentBits, partials, Partials, Embed, EmbedBuilder, PermissionsBitField, MessageFlags } = require("discord.js");
 const { SlashCommandBuilder } = require("@discordjs/builders");
 const PREFIX = "!";
@@ -26,6 +25,8 @@ const welcome = require('./welcome.js')
 // On agit quand le bot est "pret"
 client.on("ready", () => {
     console.log("Bot connecté en tant que " + client.user.tag);
+
+    welcome(client)
 
     client.user.setPresence({
         activities: [{
@@ -123,7 +124,7 @@ client.on("messageCreate", (message) => {
                         let bannedID = bans.find(ban => ban.user.id == unbanMember);
                         if (!bannedID) return await message.channel.send(`The ID stated is not banned from this server.`);
 
-                        await message.guild.bans.remove(unbanMember, reason).catch(err => {
+                        await message.guild.bans.remove(unbanMember, unbanReason).catch(err => {
                             return message.channel.send("There was an error unbanning this member.")
                         })
 
