@@ -9,24 +9,22 @@ const client = new Client({
         GatewayIntentBits.GuildMessages, // Nous autorisons à accéder aux messages
         GatewayIntentBits.MessageContent,
         GatewayIntentBits.GuildMessageReactions,
-        GatewayIntentBits.GuildModeration
+        GatewayIntentBits.GuildModeration,
+        GatewayIntentBits.GuildMembers,
     ],
     partials: [
         Partials.Message,
         Partials.Reaction,
         Partials.User,
-        Partials.GuildMember
+        Partials.GuildMember,
     ]
 });
-
-const welcome = require('./welcome.js')
 
 
 // On agit quand le bot est "pret"
 client.on("ready", () => {
     console.log("Bot connecté en tant que " + client.user.tag);
 
-    welcome(client)
 
     client.user.setPresence({
         activities: [{
@@ -104,6 +102,7 @@ client.on("messageCreate", (message) => {
                 )
 
                 member.ban().catch(err => {
+                    console.error(err)
                     message.channel.send("There was an error banning this member.");
                 })
 
@@ -118,17 +117,18 @@ client.on("messageCreate", (message) => {
                     .setColor("Red")
                     .setDescription(` :white_check_mark: <@${unbanMember}> has been **unbanned**`)
                 message.guild.bans.fetch()
-                    .then(async bans => {
+                    .then(bans => {
                         if (bans.size = 0) return message.channel.send(`There is no one banned from this server.`);
 
                         let bannedID = bans.find(ban => ban.user.id == unbanMember);
-                        if (!bannedID) return await message.channel.send(`The ID stated is not banned from this server.`);
+                        if (!bannedID) return message.channel.send(`The ID stated is not banned from this server.`);
 
-                        await message.guild.bans.remove(unbanMember, unbanReason).catch(err => {
+                        message.guild.bans.remove(unbanMember, unbanReason).catch(err => {
+                            console.error(err)
                             return message.channel.send("There was an error unbanning this member.")
                         })
 
-                        await message.channel.send({ embeds: [unbanEmbed] });
+                        message.channel.send({ embeds: [unbanEmbed] });
                     })
                 break;
             // Timeout Command
@@ -163,7 +163,7 @@ client.on("messageCreate", (message) => {
                 message.channel.send({ embeds: [timeoutEmbed] });
 
                 timeUser.send({ embeds: [dmTimeoutEmbed] }).catch(err => {
-                    return;
+                    console.error(err)
                 });
 
                 break;
@@ -192,8 +192,11 @@ client.on("messageCreate", (message) => {
                 message.channel.send({ embeds: [timeoutEmbed] });
 
                 untimeUser.send({ embeds: [dmUntimeEmbed] }).catch(err => {
-                    return;
+                    console.error(err)
                 })
+                break;
+            case "whois":
+
 
             default:
                 message.reply("Cette commande n'existe pas")
@@ -211,15 +214,25 @@ client.on("messageReactionAdd", async (reaction, user) => {
     }
 });
 
-// Slash Commands
-module.exports = {
-    data: new SlashCommandBuilder()
-        .setName('test')
-        .setDescription('This is the test command ! '),
-    async execute(interaction, client) {
-        await interaction.reply({ content: 'The bot is working' });
-    },
-};
+const channelID = '1125721047736524900';
+
+client.on("guildMemberRemove", member => {
+    console.log(member)
+
+    const channel = member.guild.channels.cache.get(channelID);
+
+    channel.send(`**${member.user.username} just leave the server.**`);
+});
+
+client.on("guildMemberAdd", member => {
+    console.log(member)
+
+    const channel = member.guild.channels.cache.get(channelID);
+
+    channel.send(`**Welcome to the server, <@${member.id}>! **`);
+
+    member.send(`Welcome to ${member.guild.name}, ${member}`)
+});
 
 // Pour connecter le bot
 client.login(TOKEN);
