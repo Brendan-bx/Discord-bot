@@ -1,7 +1,16 @@
 const { TOKEN } = require("./config.js")
-const { ActivityType, interaction, Client, GatewayIntentBits, partials, Partials, Embed, EmbedBuilder, PermissionsBitField, MessageFlags } = require("discord.js");
+const { ActivityType, interaction, Client, GatewayIntentBits, partials, Partials, Embed, EmbedBuilder, PermissionsBitField, MessageFlags, Collection, VoiceChannel } = require("discord.js");
 const { SlashCommandBuilder } = require("@discordjs/builders");
-const PREFIX = "!";
+const { createAudioPlayer, createAudioResource, joinVoiceChannel, NoSubscriberBehavior, StreamType } = require('@discordjs/voice');
+const ytdl = require('ytdl-core');
+const PREFIX = ">";
+
+
+channelID = '434688628271087626';
+const { Player } = require("discord-player");
+
+
+
 // On crée une instance du client
 const client = new Client({
     intents: [
@@ -11,29 +20,34 @@ const client = new Client({
         GatewayIntentBits.GuildMessageReactions,
         GatewayIntentBits.GuildModeration,
         GatewayIntentBits.GuildMembers,
+        GatewayIntentBits.GuildVoiceStates
     ],
     partials: [
         Partials.Message,
         Partials.Reaction,
         Partials.User,
-        Partials.GuildMember,
+        Partials.GuildMember
     ]
 });
-
+const player = new Player(client);
+client.player = player;
 
 // On agit quand le bot est "pret"
 client.on("ready", () => {
     console.log("Bot connecté en tant que " + client.user.tag);
 
 
+
     client.user.setPresence({
         activities: [{
-            name: "VALORANT",
-            type: ActivityType.Streaming
+            name: "Please use prefix '>'",
+            type: ActivityType.Playing
         }],
         status: "dnd"
     })
 });
+
+const queue = new Map();
 
 
 //On répond aux messages
@@ -61,9 +75,14 @@ client.on("messageCreate", (message) => {
                         { name: 'ban', value: 'Ban @person-name Reason' },
                         { name: 'unban', value: 'Unban @person-name Reason' },
                         { name: 'timeout', value: 'Timeout @person-name Reason' },
-                        { name: 'untimeout', value: 'Untimeout @person-name Reason' }
+                        { name: 'untimeout', value: 'Untimeout @person-name Reason' },
+                        { name: 'play', value: 'Play <link> for listening music in a voice channel' },
+                        { name: 'skip', value: 'For skipping the current song' },
+                        { name: 'stop', value: 'Disconnect the bot and clear queue' }
                     )
-                    .setFooter({ text: 'Use prefix "!"' })
+
+
+                    .setFooter({ text: 'Use prefix ">"' })
                     .setTimestamp()
                 message.channel.send({ embeds: [helpEmbed] })
                     .then(() => {
@@ -195,14 +214,121 @@ client.on("messageCreate", (message) => {
                     console.error(err)
                 })
                 break;
-            case "whois":
-
-
+            case 'play':
+                executePlayCommand(argument, message);
+                break;
+            case 'stop':
+                executeStopCommand(message);
+                break;
+            case 'skip':
+                executeSkipCommand(message);
+                break;
             default:
                 message.reply("Cette commande n'existe pas")
         }
     }
 });
+
+async function executePlayCommand(args, message) {
+    if (args.length < 1) {
+        message.channel.send('Veuillez fournir un lien YouTube.');
+        return;
+    }
+
+    const voiceChannel = message.member.voice.channel;
+    if (!voiceChannel) {
+        message.channel.send('Vous devez être dans un canal vocal pour utiliser cette commande.');
+        return;
+    }
+
+    const connection = joinVoiceChannel({
+        channelId: voiceChannel.id,
+        guildId: voiceChannel.guild.id,
+        adapterCreator: voiceChannel.guild.voiceAdapterCreator
+    });
+
+    let serverQueue = queue.get(message.guild.id);
+
+    if (!serverQueue) {
+        serverQueue = {
+            textChannel: message.channel,
+            voiceChannel: voiceChannel,
+            connection: connection,
+            songs: [],
+            playing: false,
+            currentSong: null
+        };
+
+        queue.set(message.guild.id, serverQueue);
+    }
+
+    const songInfo = await ytdl.getInfo(args[0]);
+    const song = {
+        title: songInfo.videoDetails.title,
+        url: songInfo.videoDetails.video_url
+    };
+
+    serverQueue.songs.push(song);
+
+    if (!serverQueue.playing) {
+        playNextSong(message.guild.id);
+    } else {
+        message.channel.send(`Ajouté à la file d'attente : ${song.title}`);
+    }
+}
+
+function playNextSong(guildId) {
+    const serverQueue = queue.get(guildId);
+
+    if (!serverQueue || serverQueue.songs.length === 0) {
+        serverQueue.voiceChannel.leave();
+        queue.delete(guildId);
+        return;
+    }
+
+    const song = serverQueue.songs[0];
+
+    const stream = ytdl(song.url, { filter: 'audioonly' });
+    const resource = createAudioResource(stream, { inputType: StreamType.Arbitrary });
+    const player = createAudioPlayer({ behaviors: { noSubscriber: NoSubscriberBehavior.Play } });
+
+    player.play(resource);
+    serverQueue.connection.subscribe(player);
+
+    serverQueue.textChannel.send(`Lecture en cours : ${song.title}`);
+
+    player.on('stateChange', (state) => {
+        if (state.status === 'idle') {
+            serverQueue.songs.shift();
+            playNextSong(guildId);
+        }
+    });
+
+    serverQueue.playing = true;
+}
+
+function executeStopCommand(message) {
+    const serverQueue = queue.get(message.guild.id);
+    if (!serverQueue) return;
+
+    serverQueue.songs = [];
+    serverQueue.connection.destroy();
+    queue.delete(message.guild.id);
+
+    message.channel.send('Arrêt de la lecture et nettoyage de la file d\'attente.');
+}
+
+function executeSkipCommand(message) {
+    const serverQueue = queue.get(message.guild.id);
+    if (!serverQueue) return;
+
+    if (!serverQueue.playing) {
+        message.channel.send('Il n\'y a pas de morceau en cours de lecture.');
+        return;
+    }
+
+    serverQueue.connection.destroy();
+}
 
 // On répond aux réactions 
 client.on("messageReactionAdd", async (reaction, user) => {
@@ -214,7 +340,6 @@ client.on("messageReactionAdd", async (reaction, user) => {
     }
 });
 
-const channelID = '1125721047736524900';
 
 client.on("guildMemberRemove", member => {
     console.log(member)
@@ -233,6 +358,8 @@ client.on("guildMemberAdd", member => {
 
     member.send(`Welcome to ${member.guild.name}, ${member}`)
 });
+
+
 
 // Pour connecter le bot
 client.login(TOKEN);
