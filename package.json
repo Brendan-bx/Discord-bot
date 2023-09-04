@@ -19,9 +19,13 @@
     "ffmpeg-static": "^5.1.0",
 <<<<<<< Updated upstream
     "nodemon": "^3.0.1",
+<<<<<<< HEAD
 =======
     "nodemon": "^1.19.4",
 >>>>>>> Stashed changes
+=======
+    "play-dl": "^1.9.6",
+>>>>>>> main
     "prism-media": "^1.3.5",
     "youtube-search": "^1.1.6",
     "ytdl-core": "^4.11.5"
