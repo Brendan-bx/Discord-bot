@@ -1,5 +1,5 @@
 const { TOKEN } = require("./config.js")
-const { Client, GatewayIntentBits, Partials, EmbedBuilder, PermissionsBitField } = require("discord.js");
+const { ActivityType, interaction, Client, GatewayIntentBits, partials, Partials, Embed, EmbedBuilder, PermissionsBitField, MessageFlags, Collection, VoiceChannel } = require("discord.js");
 const { SlashCommandBuilder } = require("@discordjs/builders");
 const { createAudioPlayer, createAudioResource, joinVoiceChannel, NoSubscriberBehavior, StreamType } = require('@discordjs/voice');
 const { search } = require('play-dl');
@@ -11,7 +11,7 @@ const { Player } = require("discord-player");
 
 // Define your YouTube API key (replace 'YOUR_YOUTUBE_API_KEY' with your actual key)
 const YOUTUBE_API_KEY = 'AIzaSyAYy9jtpNkqy0xUF-bwmoMuG9u1gfbo7dI';
-const search = require('youtube-search');
+const ytSearch = require('youtube-search');
 
 // Configure the YouTube search options
 const searchOptions = {
@@ -284,7 +284,7 @@ async function executePlayCommand(args, message) {
 
     if (isLink) {
         // It's a YouTube link, add it directly to the queue
-        const songInfo = await search(args[0], { source: 'youtube' });
+        const songInfo = await ytSearch(args[0], { source: 'youtube' });
         const song = {
             title: songInfo[0].title,
             url: songInfo[0].url
@@ -299,7 +299,7 @@ async function executePlayCommand(args, message) {
         }
     } else {
         // It's a search query, perform the search
-        const results = await search(args.join(' '), { source: 'youtube', limit: 1 });
+        const results = await ytSearch(args.join(' '), { source: 'youtube', limit: 1 });
 
         if (results.length === 0) {
             message.channel.send('No search results found.');
