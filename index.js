@@ -9,6 +9,16 @@ const PREFIX = ">";
 channelID = '434688628271087626';
 const { Player } = require("discord-player");
 
+// Define your YouTube API key (replace 'YOUR_YOUTUBE_API_KEY' with your actual key)
+const YOUTUBE_API_KEY = 'AIzaSyAYy9jtpNkqy0xUF-bwmoMuG9u1gfbo7dI';
+const search = require('youtube-search');
+
+// Configure the YouTube search options
+const searchOptions = {
+    maxResults: 5, // Number of search results to retrieve
+    key: YOUTUBE_API_KEY,
+};
+
 
 
 // On crée une instance du client
@@ -52,6 +62,7 @@ const queue = new Map();
 
 //On répond aux messages
 client.on("messageCreate", (message) => {
+
     if (message.content.startsWith(PREFIX)) {
         // On découpe la commande 
         const input = message.content.slice(PREFIX.length).trim().split(" ");
@@ -63,6 +74,7 @@ client.on("messageCreate", (message) => {
 
         // Commandes du bot
         switch (command) {
+
             // Help Command
             case "help":
                 const helpEmbed = new EmbedBuilder()
@@ -76,9 +88,10 @@ client.on("messageCreate", (message) => {
                         { name: 'unban', value: 'Unban @person-name Reason' },
                         { name: 'timeout', value: 'Timeout @person-name Reason' },
                         { name: 'untimeout', value: 'Untimeout @person-name Reason' },
-                        { name: 'play', value: 'Play <link> for listening music in a voice channel' },
+                        { name: 'play', value: 'Play <link> or query for listening music in a voice channel' },
                         { name: 'skip', value: 'For skipping the current song' },
-                        { name: 'stop', value: 'Disconnect the bot and clear queue' }
+                        { name: 'stop', value: 'Disconnect the bot and clear queue' },
+                        { name: 'queue', value: 'Take a look to the current queue' }
                     )
 
 
@@ -223,21 +236,25 @@ client.on("messageCreate", (message) => {
             case 'skip':
                 executeSkipCommand(message);
                 break;
+            case 'queue':
+                displayQueue(message);
+                break;
             default:
                 message.reply("Cette commande n'existe pas")
         }
     }
 });
 
+
 async function executePlayCommand(args, message) {
     if (args.length < 1) {
-        message.channel.send('Veuillez fournir un lien YouTube.');
+        message.channel.send('Please provide a YouTube link or a search query.');
         return;
     }
 
     const voiceChannel = message.member.voice.channel;
     if (!voiceChannel) {
-        message.channel.send('Vous devez être dans un canal vocal pour utiliser cette commande.');
+        message.channel.send('You must be in a voice channel to use this command.');
         return;
     }
 
@@ -262,21 +279,61 @@ async function executePlayCommand(args, message) {
         queue.set(message.guild.id, serverQueue);
     }
 
-    const songInfo = await ytdl.getInfo(args[0]);
-    const song = {
-        title: songInfo.videoDetails.title,
-        url: songInfo.videoDetails.video_url
-    };
+    // Check if the argument is a YouTube link or a search query
+    const isLink = args[0].startsWith('https://www.youtube.com/watch?v=');
 
-    serverQueue.songs.push(song);
+    if (isLink) {
+        // It's a YouTube link, add it directly to the queue
+        const songInfo = await ytdl.getInfo(args[0]);
+        const song = {
+            title: songInfo.videoDetails.title,
+            url: songInfo.videoDetails.video_url
+        };
 
-    if (!serverQueue.playing) {
-        playNextSong(message.guild.id);
+        serverQueue.songs.push(song);
+
+        if (!serverQueue.playing) {
+            playNextSong(message.guild.id);
+        } else {
+            message.channel.send(`Added to the queue: ${song.title}`);
+        }
     } else {
-        message.channel.send(`Ajouté à la file d'attente : ${song.title}`);
+        // It's a search query, perform the search
+        search(args.join(' '), searchOptions, async (error, results) => {
+            if (error) {
+                console.error(error);
+                message.channel.send('An error occurred while searching for videos.');
+                return;
+            }
+
+            if (results.length === 0) {
+                message.channel.send('No search results found.');
+                return;
+            }
+
+            const topResult = results[0];
+
+            const songInfo = await ytdl.getInfo(topResult.link);
+
+            const song = {
+                title: songInfo.videoDetails.title,
+                url: topResult.link
+            };
+
+            serverQueue.songs.push(song);
+
+            if (!serverQueue.playing) {
+                playNextSong(message.guild.id);
+            } else {
+                message.channel.send(`Added to the queue: ${song.title}`);
+            }
+        });
     }
 }
 
+
+
+// Fonction pour passer la musique suivante
 function playNextSong(guildId) {
     const serverQueue = queue.get(guildId);
 
@@ -305,8 +362,15 @@ function playNextSong(guildId) {
     });
 
     serverQueue.playing = true;
+    player.on('stateChange', (state) => {
+        if (state.status === 'idle') {
+            serverQueue.songs.shift();
+            playNextSong(guildId);
+        }
+    });
 }
 
+// Pour stopper le bot
 function executeStopCommand(message) {
     const serverQueue = queue.get(message.guild.id);
     if (!serverQueue) return;
@@ -315,20 +379,53 @@ function executeStopCommand(message) {
     serverQueue.connection.destroy();
     queue.delete(message.guild.id);
 
-    message.channel.send('Arrêt de la lecture et nettoyage de la file d\'attente.');
+    message.channel.send('Stopping playback and clearing the queue.');
 }
 
+// For skip the current song
 function executeSkipCommand(message) {
     const serverQueue = queue.get(message.guild.id);
     if (!serverQueue) return;
 
     if (!serverQueue.playing) {
-        message.channel.send('Il n\'y a pas de morceau en cours de lecture.');
+        message.channel.send('There is no song currently playing.');
         return;
     }
 
-    serverQueue.connection.destroy();
+    // Remove the current song from the queue
+    serverQueue.songs.shift();
+
+    // Check if there are more songs in the queue
+    if (serverQueue.songs.length > 0) {
+        // Play the next song
+        playNextSong(message.guild.id);
+    } else {
+        // If there are no more songs, stop playback and clear the queue
+        serverQueue.connection.destroy();
+        queue.delete(message.guild.id);
+    }
 }
+
+
+function displayQueue(message) {
+    const serverQueue = queue.get(message.guild.id);
+    if (!serverQueue || serverQueue.songs.length === 0) {
+        message.channel.send('The queue is empty.');
+        return;
+    }
+
+    const queueEmbed = new EmbedBuilder()
+        .setColor("#0099ff")
+        .setTitle("Current Queue")
+        .setDescription(
+            serverQueue.songs.map((song, index) => `${index + 1}. ${song.title}`).join('\n')
+        );
+
+    message.channel.send({ embeds: [queueEmbed] });
+}
+
+
+
 
 // On répond aux réactions 
 client.on("messageReactionAdd", async (reaction, user) => {
