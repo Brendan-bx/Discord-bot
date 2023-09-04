@@ -1,8 +1,8 @@
 const { TOKEN } = require("./config.js")
-const { ActivityType, interaction, Client, GatewayIntentBits, partials, Partials, Embed, EmbedBuilder, PermissionsBitField, MessageFlags, Collection, VoiceChannel } = require("discord.js");
+const { Client, GatewayIntentBits, Partials, EmbedBuilder, PermissionsBitField } = require("discord.js");
 const { SlashCommandBuilder } = require("@discordjs/builders");
 const { createAudioPlayer, createAudioResource, joinVoiceChannel, NoSubscriberBehavior, StreamType } = require('@discordjs/voice');
-const ytdl = require('ytdl-core');
+const { search } = require('play-dl');
 const PREFIX = ">";
 
 
@@ -284,10 +284,10 @@ async function executePlayCommand(args, message) {
 
     if (isLink) {
         // It's a YouTube link, add it directly to the queue
-        const songInfo = await ytdl.getInfo(args[0]);
+        const songInfo = await search(args[0], { source: 'youtube' });
         const song = {
-            title: songInfo.videoDetails.title,
-            url: songInfo.videoDetails.video_url
+            title: songInfo[0].title,
+            url: songInfo[0].url
         };
 
         serverQueue.songs.push(song);
@@ -299,129 +299,28 @@ async function executePlayCommand(args, message) {
         }
     } else {
         // It's a search query, perform the search
-        search(args.join(' '), searchOptions, async (error, results) => {
-            if (error) {
-                console.error(error);
-                message.channel.send('An error occurred while searching for videos.');
-                return;
-            }
+        const results = await search(args.join(' '), { source: 'youtube', limit: 1 });
 
-            if (results.length === 0) {
-                message.channel.send('No search results found.');
-                return;
-            }
-
-            const topResult = results[0];
-
-            const songInfo = await ytdl.getInfo(topResult.link);
-
-            const song = {
-                title: songInfo.videoDetails.title,
-                url: topResult.link
-            };
-
-            serverQueue.songs.push(song);
-
-            if (!serverQueue.playing) {
-                playNextSong(message.guild.id);
-            } else {
-                message.channel.send(`Added to the queue: ${song.title}`);
-            }
-        });
-    }
-}
-
-
-
-// Fonction pour passer la musique suivante
-function playNextSong(guildId) {
-    const serverQueue = queue.get(guildId);
-
-    if (!serverQueue || serverQueue.songs.length === 0) {
-        serverQueue.voiceChannel.leave();
-        queue.delete(guildId);
-        return;
-    }
-
-    const song = serverQueue.songs[0];
-
-    const stream = ytdl(song.url, { filter: 'audioonly' });
-    const resource = createAudioResource(stream, { inputType: StreamType.Arbitrary });
-    const player = createAudioPlayer({ behaviors: { noSubscriber: NoSubscriberBehavior.Play } });
-
-    player.play(resource);
-    serverQueue.connection.subscribe(player);
-
-    serverQueue.textChannel.send(`Lecture en cours : ${song.title}`);
-
-    player.on('stateChange', (state) => {
-        if (state.status === 'idle') {
-            serverQueue.songs.shift();
-            playNextSong(guildId);
+        if (results.length === 0) {
+            message.channel.send('No search results found.');
+            return;
         }
-    });
 
-    serverQueue.playing = true;
-    player.on('stateChange', (state) => {
-        if (state.status === 'idle') {
-            serverQueue.songs.shift();
-            playNextSong(guildId);
+        const topResult = results[0];
+
+        const song = {
+            title: topResult.title,
+            url: topResult.url
+        };
+
+        serverQueue.songs.push(song);
+
+        if (!serverQueue.playing) {
+            playNextSong(message.guild.id);
+        } else {
+            message.channel.send(`Added to the queue: ${song.title}`);
         }
-    });
-}
-
-// Pour stopper le bot
-function executeStopCommand(message) {
-    const serverQueue = queue.get(message.guild.id);
-    if (!serverQueue) return;
-
-    serverQueue.songs = [];
-    serverQueue.connection.destroy();
-    queue.delete(message.guild.id);
-
-    message.channel.send('Stopping playback and clearing the queue.');
-}
-
-// For skip the current song
-function executeSkipCommand(message) {
-    const serverQueue = queue.get(message.guild.id);
-    if (!serverQueue) return;
-
-    if (!serverQueue.playing) {
-        message.channel.send('There is no song currently playing.');
-        return;
     }
-
-    // Remove the current song from the queue
-    serverQueue.songs.shift();
-
-    // Check if there are more songs in the queue
-    if (serverQueue.songs.length > 0) {
-        // Play the next song
-        playNextSong(message.guild.id);
-    } else {
-        // If there are no more songs, stop playback and clear the queue
-        serverQueue.connection.destroy();
-        queue.delete(message.guild.id);
-    }
-}
-
-
-function displayQueue(message) {
-    const serverQueue = queue.get(message.guild.id);
-    if (!serverQueue || serverQueue.songs.length === 0) {
-        message.channel.send('The queue is empty.');
-        return;
-    }
-
-    const queueEmbed = new EmbedBuilder()
-        .setColor("#0099ff")
-        .setTitle("Current Queue")
-        .setDescription(
-            serverQueue.songs.map((song, index) => `${index + 1}. ${song.title}`).join('\n')
-        );
-
-    message.channel.send({ embeds: [queueEmbed] });
 }
 
 
